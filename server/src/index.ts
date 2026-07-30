@@ -1,21 +1,26 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import dotenv from 'dotenv';
-
-dotenv.config();
+import { env } from './config/env';
+import { connectDatabase } from './config/db';
+import { errorHandler } from './middleware/errorHandler';
+import routes from './routes';
 
 const app = express();
-const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(helmet());
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
-app.get('/api/v1/health', (_req, res) => {
-  res.json({ success: true, data: { status: 'ok', timestamp: new Date().toISOString() } });
-});
+app.use('/api/v1', routes);
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+app.use(errorHandler);
+
+async function start(): Promise<void> {
+  await connectDatabase();
+  app.listen(env.port, () => {
+    console.log(`Server running on port ${env.port} in ${env.nodeEnv} mode`);
+  });
+}
+
+start();
