@@ -46,3 +46,26 @@ export function requireAdmin(req: Request, _res: Response, next: NextFunction): 
   }
   next();
 }
+
+export async function optionalAuthMiddleware(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+): Promise<void> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return next();
+  }
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const payload = verifyToken(token);
+    const user = await User.findById(payload.userId);
+    if (user) {
+      req.user = user;
+    }
+  } catch {
+    // Ignore invalid tokens; treat request as unauthenticated.
+  }
+  next();
+}

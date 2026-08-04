@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import authRoutes from './auth.routes';
 import problemRoutes from './problem.routes';
+import testcaseRoutes, { testcaseDeleteRoutes } from './testcase.routes';
 
 const router = Router();
 
@@ -10,5 +11,7 @@ router.get('/health', (_req, res) => {
 
 router.use('/auth', authRoutes);
 router.use('/problems', problemRoutes);
+router.use('/problems/:problemId/testcases', testcaseRoutes);
+router.use('/testcases', testcaseDeleteRoutes);
 
 export default router;
