@@ -1,0 +1,13 @@
+services:
+  cpp:
+    image: gcc:14
+  python:
+    image: python:3.12-slim
+  node:
+    image: node:22-alpine
+  java:
+    image: eclipse-temurin:21-jdk
+  judge:
+    build:
+      context: .
+      dockerfile: judge.Dockerfile
