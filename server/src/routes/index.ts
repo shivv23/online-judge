@@ -3,6 +3,7 @@ import authRoutes from './auth.routes';
 import problemRoutes from './problem.routes';
 import testcaseRoutes, { testcaseDeleteRoutes } from './testcase.routes';
 import compileRoutes from './compile.routes';
+import submissionRoutes from './submission.routes';
 
 const router = Router();
 
@@ -15,5 +16,6 @@ router.use('/problems', problemRoutes);
 router.use('/problems/:problemId/testcases', testcaseRoutes);
 router.use('/testcases', testcaseDeleteRoutes);
 router.use('/compile', compileRoutes);
+router.use('/submissions', submissionRoutes);
 
 export default router;
