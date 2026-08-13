@@ -1,4 +1,5 @@
 import { api } from './client';
+import type { PaginatedResponse, Pagination } from '../types/problem';
 import type { Language, Submission } from '../types/submission';
 
 interface SuccessData<T> {
@@ -12,6 +13,11 @@ export interface CreateSubmissionInput {
   code: string;
 }
 
+export interface SubmissionListResult {
+  submissions: Submission[];
+  pagination: Pagination;
+}
+
 export const submissionsApi = {
   async create(input: CreateSubmissionInput): Promise<Submission> {
     const res = await api.post<SuccessData<Submission>>('/submissions', input);
@@ -21,6 +27,17 @@ export const submissionsApi = {
   async get(id: string): Promise<Submission> {
     const res = await api.get<SuccessData<Submission>>(`/submissions/${id}`);
     return res.data.data;
+  },
+
+  async listUser(
+    userId: string,
+    filters: { page?: number; limit?: number } = {},
+  ): Promise<SubmissionListResult> {
+    const res = await api.get<PaginatedResponse<Submission>>(
+      `/submissions/user/${encodeURIComponent(userId)}`,
+      { params: filters },
+    );
+    return { submissions: res.data.data, pagination: res.data.pagination };
   },
 };
 

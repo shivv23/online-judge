@@ -17,12 +17,14 @@ export default function Navbar() {
       </Link>
       <div className="navbar-links">
         <Link to="/problems">Problems</Link>
+        <Link to="/leaderboard">Leaderboard</Link>
         {user ? (
           <>
             <Link to="/dashboard">Dashboard</Link>
-            <span className="navbar-user" title={user.email}>
+            <Link to="/submissions">Submissions</Link>
+            <Link to="/profile" className="navbar-user" title={user.email}>
               {user.username}
-            </span>
+            </Link>
             <button className="btn btn-sm" onClick={handleLogout}>
               Logout
             </button>

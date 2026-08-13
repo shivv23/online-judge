@@ -5,9 +5,10 @@ import { getApiErrorMessage } from '../api/client';
 import { problemsApi } from '../api/problems';
 import { submissionsApi, waitForVerdict } from '../api/submissions';
 import Navbar from '../components/Navbar';
+import { verdictClass } from '../components/VerdictBadge';
 import { useAuth } from '../context/AuthContext';
 import type { ProblemDetail } from '../types/problem';
-import type { Language, Submission, Verdict } from '../types/submission';
+import type { Language, Submission } from '../types/submission';
 
 const LANGUAGES: Array<{ id: Language; label: string }> = [
   { id: 'cpp', label: 'C++' },
@@ -67,10 +68,6 @@ public class Main {
 // TODO: solve the problem
 `,
 };
-
-function verdictClass(verdict: Verdict): string {
-  return 'verdict-' + verdict.toLowerCase().replace(/\s+/g, '-');
-}
 
 function acceptanceRate(p: ProblemDetail): string {
   if (p.totalSubmissions === 0) {

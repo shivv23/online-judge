@@ -23,17 +23,24 @@ export default function DashboardPage() {
             </Link>
           </div>
           <div className="card">
-            <h3>Submissions</h3>
+            <h3>My Submissions</h3>
             <p className="muted">Review your past submissions and verdicts.</p>
             <Link className="btn btn-sm" to="/submissions">
-              Coming soon
+              View
             </Link>
           </div>
           <div className="card">
             <h3>Leaderboard</h3>
             <p className="muted">See how you rank against other solvers.</p>
             <Link className="btn btn-sm" to="/leaderboard">
-              Coming soon
+              View
+            </Link>
+          </div>
+          <div className="card">
+            <h3>Profile</h3>
+            <p className="muted">Your statistics and verdict breakdown.</p>
+            <Link className="btn btn-sm" to="/profile">
+              View
             </Link>
           </div>
         </div>

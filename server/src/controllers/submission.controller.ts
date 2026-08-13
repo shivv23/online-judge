@@ -23,6 +23,22 @@ function serializeSubmission(submission: any) {
   };
 }
 
+function serializeSubmissionWithProblem(submission: any) {
+  const problem = submission.problemId;
+  return {
+    ...serializeSubmission(submission),
+    problem:
+      problem && problem._id
+        ? {
+            id: String(problem._id),
+            title: problem.title,
+            slug: problem.slug,
+            difficulty: problem.difficulty,
+          }
+        : null,
+  };
+}
+
 export const createSubmission = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const { problemId, language, code } = req.body;
 
@@ -85,10 +101,17 @@ export const listUserSubmissions = asyncHandler(
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
+        .populate('problemId', 'title slug difficulty')
         .lean(),
       Submission.countDocuments(filter),
     ]);
 
-    sendPaginated(res, submissions.map(serializeSubmission), page, limit, total);
+    sendPaginated(
+      res,
+      submissions.map(serializeSubmissionWithProblem),
+      page,
+      limit,
+      total,
+    );
   },
 );
