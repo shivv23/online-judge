@@ -1,30 +1,13 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
 
 export default function DashboardPage() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-
-  function handleLogout() {
-    logout();
-    navigate('/login', { replace: true });
-  }
+  const { user } = useAuth();
 
   return (
     <div className="app-shell">
-      <nav className="navbar">
-        <span className="brand navbar-brand">Online Judge</span>
-        <div className="navbar-links">
-          <Link to="/dashboard">Dashboard</Link>
-          <span className="navbar-user" title={user?.email}>
-            {user?.username}
-          </span>
-          <button className="btn btn-sm" onClick={handleLogout}>
-            Logout
-          </button>
-        </div>
-      </nav>
-
+      <Navbar />
       <main className="container">
         <h2>Welcome back, {user?.fullName}!</h2>
         <p className="muted">
@@ -36,7 +19,7 @@ export default function DashboardPage() {
             <h3>Problems</h3>
             <p className="muted">Browse the problem set and start solving.</p>
             <Link className="btn btn-sm" to="/problems">
-              Coming soon
+              Browse
             </Link>
           </div>
           <div className="card">

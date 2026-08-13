@@ -26,6 +26,9 @@ export default function HomePage() {
             <Link className="btn btn-block" to="/login">
               Sign In
             </Link>
+            <Link className="btn btn-block" to="/problems">
+              Browse Problems
+            </Link>
           </div>
         )}
       </div>

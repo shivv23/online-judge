@@ -68,7 +68,7 @@ export const listProblems = asyncHandler(async (req: Request, res: Response): Pr
   const search = (req.query.search as string | undefined)?.trim();
 
   const filter: Record<string, unknown> = {};
-  if (difficulty) filter.difficulty = difficulty;
+  if (difficulty) filter.difficulty = new RegExp(`^${difficulty}$`, 'i');
   if (tag) filter.tags = tag;
   if (search) {
     filter.$or = [

@@ -3,6 +3,8 @@ import ProtectedRoute from './components/ProtectedRoute';
 import DashboardPage from './pages/DashboardPage';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
+import ProblemDetailPlaceholder from './pages/ProblemDetailPlaceholder';
+import ProblemListPage from './pages/ProblemListPage';
 import RegisterPage from './pages/RegisterPage';
 
 export default function App() {
@@ -11,6 +13,8 @@ export default function App() {
       <Route path="/" element={<HomePage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/problems" element={<ProblemListPage />} />
+      <Route path="/problems/:slug" element={<ProblemDetailPlaceholder />} />
       <Route
         path="/dashboard"
         element={
