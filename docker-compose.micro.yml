@@ -1,0 +1,25 @@
+services:
+  server:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 384M
+  mongo:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+  redis:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 64M
+  client:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 64M
