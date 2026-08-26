@@ -2,7 +2,7 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 COPY server/package*.json ./server/
 COPY server/tsconfig.json ./server/
-RUN cd server && npm ci
+RUN cd server && npm ci --omit=dev
 COPY server/ ./server/
 RUN cd server && npm run build
 
