@@ -7,10 +7,6 @@ let app: Express;
 
 const SUBMISSIONS = '/api/v1/submissions';
 
-function uid() {
-  return `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-}
-
 async function registerUser(app: Express): Promise<{ token: string; userId: string }> {
   const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2);
   const email = `user${suffix}@test.com`;

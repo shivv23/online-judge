@@ -21,4 +21,13 @@ export default [
       '@typescript-eslint/no-namespace': 'off',
     },
   },
+  {
+    files: ['src/__tests__/**/*.ts'],
+    languageOptions: {
+      globals: { ...globals.jest },
+    },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
 ];
