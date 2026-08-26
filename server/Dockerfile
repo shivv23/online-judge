@@ -2,14 +2,19 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 COPY server/package*.json ./server/
 COPY server/tsconfig.json ./server/
-RUN cd server && npm ci --omit=dev
+RUN cd server && npm ci
 COPY server/ ./server/
 RUN cd server && npm run build
+
+FROM node:22-alpine AS prod-deps
+WORKDIR /app
+COPY server/package*.json ./
+RUN npm ci --omit=dev
 
 FROM node:22-alpine
 RUN apk add --no-cache docker-cli
 WORKDIR /app
-COPY --from=builder /app/server/node_modules ./node_modules
+COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=builder /app/server/dist ./dist
 COPY --from=builder /app/server/package.json ./
 ENV NODE_ENV=production
