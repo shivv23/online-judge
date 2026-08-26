@@ -55,6 +55,23 @@ export interface CompileResult {
 
 const RUN_TIMEOUT_MS = 10000;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
+const CONTAINER_PREFIX = 'oj-exec-';
+
+export async function cleanupOrphanContainers(): Promise<void> {
+  try {
+    const { stdout } = await execFileAsync('docker', [
+      'ps', '-aq',
+      '--filter', `name=${CONTAINER_PREFIX}`,
+    ]);
+    const ids = stdout.trim().split('\n').filter(Boolean);
+    if (ids.length > 0) {
+      await execFileAsync('docker', ['rm', '-f', ...ids]);
+      console.log(`[docker] cleaned up ${ids.length} orphan container(s)`);
+    }
+  } catch {
+    // Docker may not be available — ignore
+  }
+}
 
 function baseDockerArgs(containerName: string, workDir: string): string[] {
   return [
@@ -69,6 +86,8 @@ function baseDockerArgs(containerName: string, workDir: string): string[] {
     '--tmpfs=/tmp:size=64m,exec',
     '--stop-timeout=5',
     '--user=1000:1000',
+    '--security-opt=no-new-privileges',
+    '--cap-drop=ALL',
     '-e',
     'HOME=/tmp',
     '--workdir=/workspace',
@@ -77,6 +96,8 @@ function baseDockerArgs(containerName: string, workDir: string): string[] {
     'sh',
   ];
 }
+
+const MAX_CODE_BYTES = 50 * 1024;
 
 interface ContainerRun {
   stdout: string;
@@ -127,8 +148,19 @@ function runInContainer(args: string[], stdin?: string): Promise<ContainerRun> {
 
 export async function runCode(req: CompileRequest): Promise<CompileResult> {
   const config = LANGUAGE_CONFIGS[req.language];
-  const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'oj-exec-'));
+  const codeBytes = Buffer.byteLength(req.code, 'utf8');
   const startedAt = Date.now();
+  const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'oj-exec-'));
+
+  if (codeBytes > MAX_CODE_BYTES) {
+    return {
+      status: 'compile_error',
+      stdout: '',
+      stderr: `Code size ${codeBytes} bytes exceeds limit of ${MAX_CODE_BYTES} bytes`,
+      exitCode: 1,
+      executionTimeMs: 0,
+    };
+  }
 
   try {
     await fs.writeFile(path.join(workDir, config.file), req.code, 'utf8');
