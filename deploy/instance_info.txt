@@ -1,0 +1,5 @@
+INSTANCE_ID=ocid1.instance.oc1.ap-hyderabad-1.anuhsljriufottqcgc7l4ghyjviz76dckbgjgaegbfc2mm3dw7e6vvh4qm7q
+PUBLIC_IP=129.225.105.207
+SHAPE=VM.Standard.E2.1.Micro
+SSH_KEY=C:\Users\HP\.ssh\oci_ed25519
+USER=ubuntu

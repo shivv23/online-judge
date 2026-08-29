@@ -10,3 +10,4 @@ coverage/
 .idea/
 *.tsbuildinfo
 *.pid
+./oj-runtime/

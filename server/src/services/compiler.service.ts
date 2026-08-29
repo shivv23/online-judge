@@ -73,7 +73,13 @@ export async function cleanupOrphanContainers(): Promise<void> {
   }
 }
 
+const CONTAINER_RUNTIME_DIR = process.env.JUDGE_CONTAINER_DIR || os.tmpdir();
+const HOST_RUNTIME_DIR = process.env.JUDGE_HOST_DIR || '';
+
 function baseDockerArgs(containerName: string, workDir: string): string[] {
+  const hostMountDir = HOST_RUNTIME_DIR
+    ? path.join(HOST_RUNTIME_DIR, path.basename(workDir))
+    : workDir;
   return [
     'run',
     '--rm',
@@ -91,7 +97,7 @@ function baseDockerArgs(containerName: string, workDir: string): string[] {
     '-e',
     'HOME=/tmp',
     '--workdir=/workspace',
-    `-v=${workDir}:/workspace`,
+    `-v=${hostMountDir}:/workspace`,
     '--entrypoint',
     'sh',
   ];
@@ -150,7 +156,8 @@ export async function runCode(req: CompileRequest): Promise<CompileResult> {
   const config = LANGUAGE_CONFIGS[req.language];
   const codeBytes = Buffer.byteLength(req.code, 'utf8');
   const startedAt = Date.now();
-  const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'oj-exec-'));
+  await fs.mkdir(CONTAINER_RUNTIME_DIR, { recursive: true });
+  const workDir = await fs.mkdtemp(path.join(CONTAINER_RUNTIME_DIR, 'oj-exec-'));
 
   if (codeBytes > MAX_CODE_BYTES) {
     return {
