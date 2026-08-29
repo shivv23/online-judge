@@ -13,6 +13,8 @@ import { cleanupOrphanContainers } from './services/compiler.service';
 
 const app = express();
 
+app.set('trust proxy', 1); // nginx sits in front; use client IP from X-Forwarded-For
+
 app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
