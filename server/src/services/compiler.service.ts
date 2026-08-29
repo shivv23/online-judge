@@ -170,7 +170,9 @@ export async function runCode(req: CompileRequest): Promise<CompileResult> {
   }
 
   try {
+    await fs.chmod(workDir, 0o777);
     await fs.writeFile(path.join(workDir, config.file), req.code, 'utf8');
+    await fs.chmod(path.join(workDir, config.file), 0o644);
 
     if (config.compileCommand) {
       const compileName = `oj-exec-${crypto.randomBytes(6).toString('hex')}`;
