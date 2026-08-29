@@ -53,7 +53,8 @@ export interface CompileResult {
   executionTimeMs: number;
 }
 
-const RUN_TIMEOUT_MS = 10000;
+const COMPILE_TIMEOUT_MS = parseInt(process.env.JUDGE_COMPILE_TIMEOUT_MS || '30000', 10);
+const RUN_TIMEOUT_MS = parseInt(process.env.JUDGE_RUN_TIMEOUT_MS || '15000', 10);
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 const CONTAINER_PREFIX = 'oj-exec-';
 
@@ -113,7 +114,7 @@ interface ContainerRun {
   overflow: boolean;
 }
 
-function runInContainer(args: string[], stdin?: string): Promise<ContainerRun> {
+function runInContainer(args: string[], stdin?: string, timeoutMs = RUN_TIMEOUT_MS): Promise<ContainerRun> {
   return new Promise((resolve) => {
     const child = spawn('docker', args, { stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
@@ -124,7 +125,7 @@ function runInContainer(args: string[], stdin?: string): Promise<ContainerRun> {
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill();
-    }, RUN_TIMEOUT_MS);
+    }, timeoutMs);
 
     child.stdout.on('data', (chunk: Buffer) => {
       stdout += chunk;
@@ -176,12 +177,16 @@ export async function runCode(req: CompileRequest): Promise<CompileResult> {
 
     if (config.compileCommand) {
       const compileName = `oj-exec-${crypto.randomBytes(6).toString('hex')}`;
-      const compile = await runInContainer([
-        ...baseDockerArgs(compileName, workDir),
-        config.image,
-        '-c',
-        config.compileCommand,
-      ]);
+      const compile = await runInContainer(
+        [
+          ...baseDockerArgs(compileName, workDir),
+          config.image,
+          '-c',
+          config.compileCommand,
+        ],
+        undefined,
+        COMPILE_TIMEOUT_MS,
+      );
 
       if (compile.timedOut) {
         await execFileAsync('docker', ['rm', '-f', compileName]).catch(() => undefined);
