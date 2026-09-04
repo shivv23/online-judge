@@ -1,23 +1,27 @@
 #!/bin/bash
 # Registers the DuckDNS updater to run every 5 minutes.
+# Writes an /etc/cron.d entry (root-owned, mode 0644) so it survives reboot
+# without depending on a user crontab.
 # Requires: DUCKDNS_DOMAINS and DUCKDNS_TOKEN set in the repo .env file.
 
 set -e
 REPO_DIR="/home/ubuntu/online-judge"
 SCRIPT="$REPO_DIR/deploy/duckdns-update.sh"
+CRON_FILE="/etc/cron.d/duckdns-update"
 
 chmod +x "$SCRIPT"
+chmod +x "$REPO_DIR/deploy/install-duckdns-cron.sh"
 
-CRON_LINE="*/5 * * * * $SCRIPT >> /var/log/duckdns-update.log 2>&1"
+CONTENT=$'SHELL=/bin/bash\n*/5 * * * * root '"$SCRIPT"$' >> /var/log/duckdns-update.log 2>&1\n'
 
-# Remove any existing line for this script, then add fresh
-(crontab -l 2>/dev/null | grep -v "duckdns-update.sh" || true)
-( (crontab -l 2>/dev/null | grep -v "duckdns-update.sh") ; echo "$CRON_LINE" ) | crontab -
+sudo rm -f "$CRON_FILE"
+sudo install -o root -g root -m 0644 /dev/stdin "$CRON_FILE" <<< "$CONTENT"
 
-echo "Installed cron: $CRON_LINE"
-echo "Current crontab:"
-crontab -l 2>/dev/null | grep duckdns
+echo "Installed $CRON_FILE:"
+sudo cat "$CRON_FILE"
+echo
+echo "Cron service status:"
+systemctl is-active cron 2>/dev/null || service cron status 2>&1 | head -3 || true
 
-# Run once now to validate token/domains
 echo "--- test run ---"
 bash "$SCRIPT"
