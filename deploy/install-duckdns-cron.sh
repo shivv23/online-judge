@@ -9,9 +9,6 @@ REPO_DIR="/home/ubuntu/online-judge"
 SCRIPT="$REPO_DIR/deploy/duckdns-update.sh"
 CRON_FILE="/etc/cron.d/duckdns-update"
 
-chmod +x "$SCRIPT"
-chmod +x "$REPO_DIR/deploy/install-duckdns-cron.sh"
-
 CONTENT=$'SHELL=/bin/bash\n*/5 * * * * root '"$SCRIPT"$' >> /var/log/duckdns-update.log 2>&1\n'
 
 sudo rm -f "$CRON_FILE"
