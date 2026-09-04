@@ -27,6 +27,47 @@ A full-stack competitive programming platform with Docker-based code execution.
 - Admin panel for problem management
 - Rate limiting, helmet security headers, structured error handling
 
+## Security & Sandboxing
+
+This platform executes arbitrary user-submitted code, so the execution
+environment is the primary security boundary. Every test case runs in its own
+short-lived Docker container built specifically for that run and removed
+immediately afterwards (`docker run --rm`). The isolation profile
+(`server/src/services/compiler.service.ts` -> `baseDockerArgs`) is:
+
+| Control | Setting | What it prevents |
+|---------|---------|------------------|
+| Network | `--network=none` | No egress — no exfiltration, no internal scanning, no DNS |
+| Capabilities | `--cap-drop=ALL` | No raw sockets, no ptrace, no privilege escalation |
+| User | `--user=1000:1000` + `--no-new-privileges` | Runs unprivileged; setuid binaries can't escalate |
+| Filesystem | `--read-only` rootfs + `--tmpfs=/tmp:size=64m` | Image is immutable; writable scratch is bounded |
+| Memory | `--memory=256m --memory-swap=256m` | Hard RAM cap; no host-swap escape |
+| CPU | `--cpus=0.5` | Can't starve the host |
+| Processes | `--pids-limit=50` + `--ulimit nofile=64` | Forkbomb and fd exhaustion are bounded |
+| Files | `--ulimit fsize=8M` | Per-file size capped (protects the shared workdir) |
+| Timeouts | compile 30s / run 15s (server-enforced `kill`) | No runaway jobs — stale containers are force-removed |
+| Output | 1 MB stdout cap, 50 KB code cap | Resource/amplification limits |
+| Runtime access | Judge containers get no Docker socket | Can't reach the container runtime or host daemon |
+
+Notes and honest caveats:
+
+- This is **Docker-based isolation (shared kernel)**, not a VM. The residual
+  risk is a kernel-level container breakout, mitigated by `--network=none`
+  (a thrown-away container has nothing to exfiltrate to) and Docker's default
+  **seccomp** and **AppArmor** profiles, which are left enabled.
+- Compiled languages write their binary through a **host bind-mount**
+  (`oj-runtime/<exec>`), so the compiled output briefly crosses the container
+  boundary before the run container picks it up. Each workdir is created with
+  `0o777`, is unique per run, and deleted after the run. This is the standard
+  compile-here/run-there pattern for compilers; the alternative (compiling on
+  the host or ingesting the binary via stdin) trades simplicity for a smaller
+  cross-boundary surface.
+- The **server** process mounts `/var/run/docker.sock` to spawn judge
+  containers (Docker-in-Docker style). User code never sees this socket.
+- For a high-stakes public deployment the next hardening step is a custom
+  **seccomp profile** and/or running the judges under a **gVisor (`runsc`)**
+  or microVM runtime (roadmap item).
+
 ## Quick Start (Development)
 
 ### Prerequisites
