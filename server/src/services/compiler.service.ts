@@ -53,6 +53,15 @@ export interface CompileResult {
   executionTimeMs: number;
 }
 
+export interface CompileSession {
+  workDir: string;
+  status: 'success' | 'compile_error' | 'timeout';
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+  executionTimeMs: number;
+}
+
 const COMPILE_TIMEOUT_MS = parseInt(process.env.JUDGE_COMPILE_TIMEOUT_MS || '30000', 10);
 const RUN_TIMEOUT_MS = parseInt(process.env.JUDGE_RUN_TIMEOUT_MS || '15000', 10);
 const MAX_OUTPUT_BYTES = 1024 * 1024;
@@ -156,7 +165,7 @@ function runInContainer(args: string[], stdin?: string, timeoutMs = RUN_TIMEOUT_
   });
 }
 
-export async function runCode(req: CompileRequest): Promise<CompileResult> {
+export async function compileCode(req: CompileRequest): Promise<CompileSession> {
   const config = LANGUAGE_CONFIGS[req.language];
   const codeBytes = Buffer.byteLength(req.code, 'utf8');
   const startedAt = Date.now();
@@ -164,7 +173,9 @@ export async function runCode(req: CompileRequest): Promise<CompileResult> {
   const workDir = await fs.mkdtemp(path.join(CONTAINER_RUNTIME_DIR, 'oj-exec-'));
 
   if (codeBytes > MAX_CODE_BYTES) {
+    await fs.rm(workDir, { recursive: true, force: true }).catch(() => undefined);
     return {
+      workDir,
       status: 'compile_error',
       stdout: '',
       stderr: `Code size ${codeBytes} bytes exceeds limit of ${MAX_CODE_BYTES} bytes`,
@@ -178,83 +189,144 @@ export async function runCode(req: CompileRequest): Promise<CompileResult> {
     await fs.writeFile(path.join(workDir, config.file), req.code, 'utf8');
     await fs.chmod(path.join(workDir, config.file), 0o644);
 
-    if (config.compileCommand) {
-      const compileName = `oj-exec-${crypto.randomBytes(6).toString('hex')}`;
-      const compile = await runInContainer(
-        [
-          ...baseDockerArgs(compileName, workDir),
-          config.image,
-          '-c',
-          config.compileCommand,
-        ],
-        undefined,
-        COMPILE_TIMEOUT_MS,
-      );
-
-      if (compile.timedOut) {
-        await execFileAsync('docker', ['rm', '-f', compileName]).catch(() => undefined);
-        return {
-          status: 'timeout',
-          stdout: '',
-          stderr: 'Compilation timed out',
-          exitCode: null,
-          executionTimeMs: Date.now() - startedAt,
-        };
-      }
-      if (compile.exitCode !== 0) {
-        return {
-          status: 'compile_error',
-          stdout: compile.stdout,
-          stderr: compile.stderr,
-          exitCode: compile.exitCode,
-          executionTimeMs: Date.now() - startedAt,
-        };
-      }
+    if (!config.compileCommand) {
+      return {
+        workDir,
+        status: 'success',
+        stdout: '',
+        stderr: '',
+        exitCode: 0,
+        executionTimeMs: Date.now() - startedAt,
+      };
     }
 
-    const runName = `oj-exec-${crypto.randomBytes(6).toString('hex')}`;
-    const run = await runInContainer(
-      [...baseDockerArgs(runName, workDir), '--interactive', config.image, '-c', config.runCommand],
-      req.input,
+    const compileName = `oj-exec-${crypto.randomBytes(6).toString('hex')}`;
+    const compile = await runInContainer(
+      [
+        ...baseDockerArgs(compileName, workDir),
+        config.image,
+        '-c',
+        config.compileCommand,
+      ],
+      undefined,
+      COMPILE_TIMEOUT_MS,
     );
 
-    if (run.timedOut) {
-      await execFileAsync('docker', ['rm', '-f', runName]).catch(() => undefined);
+    if (compile.timedOut) {
+      await execFileAsync('docker', ['rm', '-f', compileName]).catch(() => undefined);
       return {
+        workDir,
         status: 'timeout',
         stdout: '',
-        stderr: 'Execution timed out',
+        stderr: 'Compilation timed out',
         exitCode: null,
         executionTimeMs: Date.now() - startedAt,
       };
     }
-    if (run.overflow) {
+    if (compile.exitCode !== 0) {
       return {
-        status: 'runtime_error',
-        stdout: '',
-        stderr: 'Output limit exceeded',
-        exitCode: null,
-        executionTimeMs: Date.now() - startedAt,
-      };
-    }
-    if (run.exitCode !== 0) {
-      return {
-        status: 'runtime_error',
-        stdout: run.stdout,
-        stderr: run.stderr,
-        exitCode: run.exitCode,
+        workDir,
+        status: 'compile_error',
+        stdout: compile.stdout,
+        stderr: compile.stderr,
+        exitCode: compile.exitCode,
         executionTimeMs: Date.now() - startedAt,
       };
     }
 
     return {
+      workDir,
       status: 'success',
-      stdout: run.stdout,
-      stderr: run.stderr,
+      stdout: compile.stdout,
+      stderr: compile.stderr,
       exitCode: 0,
       executionTimeMs: Date.now() - startedAt,
     };
-  } finally {
-    await fs.rm(workDir, { recursive: true, force: true });
+  } catch (error) {
+    await fs.rm(workDir, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
   }
+}
+
+export async function disposeSession(session: CompileSession): Promise<void> {
+  await fs.rm(session.workDir, { recursive: true, force: true });
+}
+
+export async function runCode(req: CompileRequest): Promise<CompileResult> {
+  const session = await compileCode(req);
+  try {
+    if (session.status === 'compile_error') {
+      return {
+        status: 'compile_error',
+        stdout: session.stdout,
+        stderr: session.stderr,
+        exitCode: session.exitCode,
+        executionTimeMs: session.executionTimeMs,
+      };
+    }
+    if (session.status === 'timeout') {
+      return {
+        status: 'timeout',
+        stdout: '',
+        stderr: 'Compilation timed out',
+        exitCode: null,
+        executionTimeMs: session.executionTimeMs,
+      };
+    }
+    return await runCompiled(session, req);
+  } finally {
+    await disposeSession(session);
+  }
+}
+
+export async function runCompiled(
+  session: CompileSession,
+  req: CompileRequest,
+  timeoutMs = RUN_TIMEOUT_MS,
+): Promise<CompileResult> {
+  const config = LANGUAGE_CONFIGS[req.language];
+  const startedAt = Date.now();
+  const runName = `oj-exec-${crypto.randomBytes(6).toString('hex')}`;
+  const run = await runInContainer(
+    [...baseDockerArgs(runName, session.workDir), '--interactive', config.image, '-c', config.runCommand],
+    req.input,
+    timeoutMs,
+  );
+
+  if (run.timedOut) {
+    await execFileAsync('docker', ['rm', '-f', runName]).catch(() => undefined);
+    return {
+      status: 'timeout',
+      stdout: '',
+      stderr: 'Execution timed out',
+      exitCode: null,
+      executionTimeMs: Date.now() - startedAt,
+    };
+  }
+  if (run.overflow) {
+    return {
+      status: 'runtime_error',
+      stdout: '',
+      stderr: 'Output limit exceeded',
+      exitCode: null,
+      executionTimeMs: Date.now() - startedAt,
+    };
+  }
+  if (run.exitCode !== 0) {
+    return {
+      status: 'runtime_error',
+      stdout: run.stdout,
+      stderr: run.stderr,
+      exitCode: run.exitCode,
+      executionTimeMs: Date.now() - startedAt,
+    };
+  }
+
+  return {
+    status: 'success',
+    stdout: run.stdout,
+    stderr: run.stderr,
+    exitCode: 0,
+    executionTimeMs: Date.now() - startedAt,
+  };
 }

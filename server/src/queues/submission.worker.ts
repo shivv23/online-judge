@@ -4,7 +4,7 @@ import { env } from '../config/env';
 import { Submission, SubmissionVerdict } from '../models/Submission';
 import { Problem } from '../models/Problem';
 import { TestCase } from '../models/TestCase';
-import { runCode } from '../services/compiler.service';
+import { compileCode, disposeSession, runCompiled } from '../services/compiler.service';
 
 function normalizeOutput(output: string): string {
   return output.trim().replace(/\s+/g, ' ');
@@ -30,33 +30,44 @@ export async function evaluateSubmission(submissionId: string): Promise<void> {
   let testCasesPassed = 0;
   let executionTimeMs = 0;
 
-  for (const testCase of testCases) {
-    const result = await runCode({
-      language: submission.language,
-      code: submission.code,
-      input: testCase.input,
-    });
-    executionTimeMs = Math.max(executionTimeMs, result.executionTimeMs);
-
-    if (result.status === 'compile_error') {
+  const session = await compileCode({
+    language: submission.language,
+    code: submission.code,
+  });
+  try {
+    if (session.status === 'compile_error') {
       verdict = 'Compile Error';
-      errorMessage = result.stderr.slice(0, 4000);
-      break;
-    }
-    if (result.status === 'timeout') {
+      errorMessage = session.stderr.slice(0, 4000);
+    } else if (session.status === 'timeout') {
       verdict = 'Time Limit Exceeded';
-      break;
+      errorMessage = session.stderr.slice(0, 4000);
+    } else {
+      for (const testCase of testCases) {
+        const result = await runCompiled(session, {
+          language: submission.language,
+          code: submission.code,
+          input: testCase.input,
+        });
+        executionTimeMs = Math.max(executionTimeMs, result.executionTimeMs);
+
+        if (result.status === 'timeout') {
+          verdict = 'Time Limit Exceeded';
+          break;
+        }
+        if (result.status === 'runtime_error') {
+          verdict = 'Runtime Error';
+          errorMessage = result.stderr.slice(0, 4000);
+          break;
+        }
+        if (normalizeOutput(result.stdout) !== normalizeOutput(testCase.expectedOutput)) {
+          verdict = 'Wrong Answer';
+          break;
+        }
+        testCasesPassed += 1;
+      }
     }
-    if (result.status === 'runtime_error') {
-      verdict = 'Runtime Error';
-      errorMessage = result.stderr.slice(0, 4000);
-      break;
-    }
-    if (normalizeOutput(result.stdout) !== normalizeOutput(testCase.expectedOutput)) {
-      verdict = 'Wrong Answer';
-      break;
-    }
-    testCasesPassed += 1;
+  } finally {
+    await disposeSession(session);
   }
 
   submission.verdict = verdict;
