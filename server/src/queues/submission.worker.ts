@@ -4,7 +4,7 @@ import { env } from '../config/env';
 import { Submission, SubmissionVerdict } from '../models/Submission';
 import { Problem } from '../models/Problem';
 import { TestCase } from '../models/TestCase';
-import { compileCode, disposeSession, runCompiled } from '../services/compiler.service';
+import { compileCode, disposeSession, runCompiled, createExecSession, destroyExecSession, resetExecSession, runCompiledInSession, type ExecSession } from '../services/compiler.service';
 
 function normalizeOutput(output: string): string {
   return output.trim().replace(/\s+/g, ' ');
@@ -34,6 +34,7 @@ export async function evaluateSubmission(submissionId: string): Promise<void> {
     language: submission.language,
     code: submission.code,
   });
+  let execSession: ExecSession | null = null;
   try {
     if (session.status === 'compile_error') {
       verdict = 'Compile Error';
@@ -42,12 +43,21 @@ export async function evaluateSubmission(submissionId: string): Promise<void> {
       verdict = 'Time Limit Exceeded';
       errorMessage = session.stderr.slice(0, 4000);
     } else {
+      try {
+        execSession = await createExecSession(submission.language, session.workDir);
+      } catch (error: any) {
+        console.warn(`[judge] exec session unavailable, falling back to per-case runs: ${error.message}`);
+      }
+
       for (const testCase of testCases) {
-        const result = await runCompiled(session, {
+        const req = {
           language: submission.language,
           code: submission.code,
           input: testCase.input,
-        });
+        };
+        const result = execSession
+          ? await runCompiledInSession(execSession, req)
+          : await runCompiled(session, req);
         executionTimeMs = Math.max(executionTimeMs, result.executionTimeMs);
 
         if (result.status === 'timeout') {
@@ -64,9 +74,15 @@ export async function evaluateSubmission(submissionId: string): Promise<void> {
           break;
         }
         testCasesPassed += 1;
+        if (execSession) {
+          await resetExecSession(execSession, submission.language);
+        }
       }
     }
   } finally {
+    if (execSession) {
+      await destroyExecSession(execSession);
+    }
     await disposeSession(session);
   }
 

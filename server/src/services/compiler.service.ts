@@ -12,6 +12,7 @@ export interface LanguageConfig {
   file: string;
   compileCommand?: string;
   runCommand: string;
+  preserve: string[];
 }
 
 export const LANGUAGE_CONFIGS: Record<string, LanguageConfig> = {
@@ -20,20 +21,33 @@ export const LANGUAGE_CONFIGS: Record<string, LanguageConfig> = {
     file: 'main.cpp',
     compileCommand: 'g++ -O2 -o main main.cpp',
     runCommand: './main',
+    preserve: ['main.cpp', 'main'],
   },
   c: {
     image: 'gcc:14',
     file: 'main.c',
     compileCommand: 'gcc -O2 -o main main.c',
     runCommand: './main',
+    preserve: ['main.c', 'main'],
   },
-  python: { image: 'python:3.12-slim', file: 'main.py', runCommand: 'python3 main.py' },
-  js: { image: 'node:22-alpine', file: 'main.js', runCommand: 'node main.js' },
+  python: {
+    image: 'python:3.12-slim',
+    file: 'main.py',
+    runCommand: 'python3 main.py',
+    preserve: ['main.py'],
+  },
+  js: {
+    image: 'node:22-alpine',
+    file: 'main.js',
+    runCommand: 'node main.js',
+    preserve: ['main.js'],
+  },
   java: {
     image: 'eclipse-temurin:21-jdk',
     file: 'Main.java',
     compileCommand: 'javac Main.java',
     runCommand: 'java Main',
+    preserve: ['Main.java', '*.class'],
   },
 };
 
@@ -295,6 +309,183 @@ export async function runCompiled(
 
   if (run.timedOut) {
     await execFileAsync('docker', ['rm', '-f', runName]).catch(() => undefined);
+    return {
+      status: 'timeout',
+      stdout: '',
+      stderr: 'Execution timed out',
+      exitCode: null,
+      executionTimeMs: Date.now() - startedAt,
+    };
+  }
+  if (run.overflow) {
+    return {
+      status: 'runtime_error',
+      stdout: '',
+      stderr: 'Output limit exceeded',
+      exitCode: null,
+      executionTimeMs: Date.now() - startedAt,
+    };
+  }
+  if (run.exitCode !== 0) {
+    return {
+      status: 'runtime_error',
+      stdout: run.stdout,
+      stderr: run.stderr,
+      exitCode: run.exitCode,
+      executionTimeMs: Date.now() - startedAt,
+    };
+  }
+
+  return {
+    status: 'success',
+    stdout: run.stdout,
+    stderr: run.stderr,
+    exitCode: 0,
+    executionTimeMs: Date.now() - startedAt,
+  };
+}
+
+export interface ExecSession {
+  name: string;
+}
+
+/**
+ * Creates a long-lived, sandboxed container that is reused for all test cases
+ * of one submission. PID 1 runs as root (a `sleep` sentinel) so that a
+ * per-case `kill -9 -1` as the judge user cannot take down the session; each
+ * test case then runs via `docker exec --user=1000:1000`.
+ */
+export async function createExecSession(language: string, workDir: string): Promise<ExecSession> {
+  const config = LANGUAGE_CONFIGS[language];
+  const name = `oj-exec-sess-${crypto.randomBytes(6).toString('hex')}`;
+  const createArgs = [
+    'create',
+    ...baseDockerArgs(name, workDir)
+      .slice(1)
+      .filter((arg) => arg !== '--rm' && arg !== '--user=1000:1000'),
+    config.image,
+    '-c',
+    'sleep 1000000',
+  ];
+  await execFileAsync('docker', createArgs);
+  await execFileAsync('docker', ['start', name]);
+  await waitContainerRunning(name);
+  return { name };
+}
+
+async function waitContainerRunning(name: string): Promise<void> {
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    try {
+      const { stdout } = await execFileAsync('docker', [
+        'inspect',
+        '-f',
+        '{{.State.Running}}',
+        name,
+      ]);
+      if (stdout.trim() === 'true') {
+        return;
+      }
+    } catch {
+      // container may not exist yet — retry
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`session container ${name} did not reach running state`);
+}
+
+const EXEC_USER = '--user=1000:1000';
+
+/**
+ * Runs a command inside a session container, piping `stdin`. On timeout (or
+ * output overflow) the exec client is killed and every judge-user process left
+ * in the container is SIGKILLed so the container stays reusable.
+ */
+function execInContainer(
+  name: string,
+  cmd: string,
+  stdin: string | undefined,
+  timeoutMs: number,
+): Promise<ContainerRun> {
+  return new Promise((resolve) => {
+    const child = spawn('docker', ['exec', '-i', EXEC_USER, '-w', '/workspace', name, 'sh', '-c', cmd], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    let overflow = false;
+
+    const killLeftover = () => {
+      execFileAsync('docker', ['exec', EXEC_USER, name, 'sh', '-c', 'kill -9 -1']).catch(() => undefined);
+    };
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+      killLeftover();
+    }, timeoutMs);
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk;
+      if (stdout.length > MAX_OUTPUT_BYTES) {
+        overflow = true;
+        child.kill();
+        killLeftover();
+      }
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk;
+    });
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ stdout, stderr, exitCode: code, timedOut, overflow });
+    });
+
+    child.on('error', () => {
+      clearTimeout(timer);
+      resolve({ stdout, stderr, exitCode: null, timedOut: false, overflow: false });
+    });
+
+    child.stdin.write(stdin ?? '');
+    child.stdin.end();
+  });
+}
+
+function buildResetScript(preserve: string[]): string {
+  const keepPattern = preserve.map((p) => `"${p}"`).join('|');
+  return (
+    'cd /workspace; ' +
+    'for f in * .[!.]*; do [ -e "$f" ] || continue; case "$f" in ' +
+    keepPattern +
+    ') continue ;; esac; rm -rf -- "$f"; done; ' +
+    'for f in /tmp/* /tmp/.[!.]*; do [ -e "$f" ] || continue; rm -rf -- "$f"; done'
+  );
+}
+
+/**
+ * Wipes everything the program may have written into the shared workspace and
+ * /tmp between test cases, keeping only the compiled artifacts.
+ */
+export async function resetExecSession(session: ExecSession, language: string): Promise<void> {
+  const config = LANGUAGE_CONFIGS[language];
+  await execInContainer(session.name, buildResetScript(config.preserve), undefined, 15000);
+}
+
+export async function destroyExecSession(session: ExecSession): Promise<void> {
+  await execFileAsync('docker', ['rm', '-f', session.name]).catch(() => undefined);
+}
+
+export async function runCompiledInSession(
+  session: ExecSession,
+  req: CompileRequest,
+  timeoutMs = RUN_TIMEOUT_MS,
+): Promise<CompileResult> {
+  const config = LANGUAGE_CONFIGS[req.language];
+  const startedAt = Date.now();
+  const run = await execInContainer(session.name, config.runCommand, req.input, timeoutMs);
+
+  if (run.timedOut) {
     return {
       status: 'timeout',
       stdout: '',
