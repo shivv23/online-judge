@@ -62,7 +62,7 @@ export interface CompileSession {
   executionTimeMs: number;
 }
 
-const COMPILE_TIMEOUT_MS = parseInt(process.env.JUDGE_COMPILE_TIMEOUT_MS || '30000', 10);
+const COMPILE_TIMEOUT_MS = parseInt(process.env.JUDGE_COMPILE_TIMEOUT_MS || '90000', 10);
 const RUN_TIMEOUT_MS = parseInt(process.env.JUDGE_RUN_TIMEOUT_MS || '15000', 10);
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 const CONTAINER_PREFIX = 'oj-exec-';
